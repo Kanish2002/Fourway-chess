@@ -3,12 +3,12 @@
   "version": "2.0.0",
   "private": true,
   "type": "module",
-  "description": "Four-player chess: solo bots, local multiplayer and teams on a 160-square board",
+  "description": "Four-player chess with online code rooms, bots, pass-and-play and teams",
   "scripts": {
     "dev": "node scripts/serve.mjs",
     "build": "node scripts/build.mjs",
     "test": "node --test tests/*.test.mjs",
-    "check": "node --check public/engine.js && node --check public/app.js && node --check public/pieces.js && node --check public/sounds.js && npm test"
+    "check": "node --check public/engine.js && node --check public/app.js && node --check public/pieces.js && node --check public/sounds.js && node --check public/rooms.js && node --check server/rooms.js && node --check server/store.js && node --check server/http.js && node --check api/rooms.js && npm test"
   },
   "engines": {
     "node": ">=22"

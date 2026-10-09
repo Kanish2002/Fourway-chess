@@ -1,9 +1,14 @@
 import { createServer } from 'node:http';
 import { readFile } from 'node:fs/promises';
 import { resolve, extname } from 'node:path';
+import { MemoryStore, productionStore } from '../server/store.js';
+import { RoomService } from '../server/rooms.js';
+import { roomHandler } from '../server/http.js';
+const handleRooms=roomHandler(new RoomService(productionStore() || new MemoryStore()));
 const root = resolve('public');
 const types = { '.html': 'text/html', '.js': 'text/javascript', '.css': 'text/css', '.svg': 'image/svg+xml', '.json': 'application/json' };
 createServer(async (req, res) => {
+  if(new URL(req.url,'http://localhost').pathname==='/api/rooms')return handleRooms(req,res);
   try {
     const file = resolve(root, '.' + decodeURIComponent(new URL(req.url, 'http://localhost').pathname).replace(/\/$/, '/index.html'));
     if (!file.startsWith(root + '/')) throw new Error('Invalid path');

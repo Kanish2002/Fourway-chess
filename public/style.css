@@ -2184,3 +2184,41 @@ body.focus-mode .game-layout {
     scroll-behavior:auto!important;
   }
 }
+
+
+/* One continuous outline follows all twelve edges of the cross. Keeping it in
+   an overlay preserves the board's exact grid and pointer-coordinate mapping. */
+.board-border { position:absolute; inset:0; width:100%; height:100%; overflow:visible; pointer-events:none; z-index:6; }
+.board-border path { fill:none; stroke:#151411; stroke-width:5px; vector-effect:non-scaling-stroke; stroke-linejoin:round; filter:drop-shadow(0 1px 1px #ffffff40); }
+.piece { position:relative; }
+.neo-piece { display:none; position:absolute; inset:0; width:100%; height:100%; object-fit:contain; }
+.neo-piece.neo-ready { display:block; }
+.piece:has(.neo-ready) > svg { visibility:hidden; }
+/* Preserve dark outlines while coloring the light Neo artwork. */
+.piece.red .neo-piece { filter:url(#neo-red); }
+.piece.blue .neo-piece { filter:url(#neo-blue); }
+.piece.yellow .neo-piece { filter:url(#neo-yellow); }
+.piece.green .neo-piece { filter:url(#neo-green); }
+.piece.dead .neo-piece { filter:grayscale(1) brightness(.85); }
+.room-banner { display:flex; align-items:center; justify-content:space-between; gap:10px; padding:10px 14px; background:#262421; font-size:12px; }
+.room-banner[hidden], #room-lobby[hidden], #room-entry[hidden] { display:none; }
+#room-dialog { width:min(560px,calc(100vw - 24px)); }
+.room-label { display:block; margin:12px 0 8px; font-size:13px; color:var(--muted); }
+.room-label input, .join-room-form input { display:block; width:100%; margin-top:8px; border:1px solid #55514b; border-radius:5px; background:#211f1c; color:#fff; padding:12px; font:inherit; }
+.join-room-form { display:flex; align-items:end; gap:12px; margin-bottom:12px; }
+.join-room-form label { flex:1; min-width:0; }
+#room-code { text-transform:uppercase; letter-spacing:3px; font-weight:700; }
+.room-divider { margin:22px 0; text-align:center; font-size:12px; color:var(--muted); }
+.invite-code { display:flex; align-items:center; justify-content:space-between; gap:12px; background:#24221f; border:1px dashed #81b64c; border-radius:8px; padding:14px; }
+.invite-code strong { font-size:28px; letter-spacing:6px; color:#fff; }
+.room-seats { display:grid; grid-template-columns:1fr 1fr; gap:10px; margin:16px 0; }
+.room-seat { border:1px solid #5e5b54; border-left:4px solid var(--player); border-radius:6px; background:#302d28; padding:12px; text-align:left; min-width:0; }
+.room-seat strong, .room-seat small { display:block; overflow-wrap:anywhere; }
+.room-seat small { color:var(--muted); margin-top:5px; font-size:12px; }
+.room-seat:disabled { opacity:.9; cursor:default; }
+.room-error { color:#ff9a88; min-height:20px; font-size:13px; }
+.room-reconnect-note { color:var(--muted); font-size:12px; line-height:1.6; }
+#room-start, #room-leave { width:100%; margin-top:10px; }
+@media (max-width:480px) { .board-border path { stroke-width:3px; } .invite-code strong { font-size:23px; letter-spacing:4px; } .join-room-form { gap:8px; } }
+
+.piece-filters { position:absolute; pointer-events:none; }

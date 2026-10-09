@@ -8,7 +8,7 @@ const paths = {
   q: '<path d="m9 13 7 8 1-12 7 11 7-11 1 12 7-8-5 16 1 6H13l1-6z"/><circle cx="9" cy="11" r="2.5"/><circle cx="17" cy="7" r="2.5"/><circle cx="24" cy="5" r="2.5"/><circle cx="31" cy="7" r="2.5"/><circle cx="39" cy="11" r="2.5"/><path class="piece-highlight" d="m16 23 3 2 1 8h-3zM22 6h2v2h-2z"/><path class="piece-shade" d="m30 23 3-2-2 8 2 5h-4z"/><path class="piece-detail" d="M15 29h18M15 33h18"/>',
   k: '<path d="M22 3h4v5h5v4h-5v5h-4v-5h-5V8h5z"/><path d="M24 19c-7-9-17-1-12 7l5 5-2 4h18l-2-4 5-5c5-8-5-16-12-7z"/><path class="piece-highlight" d="M15 18c-3 1-3 6 2 9l3 1c-5-5-4-7-3-9zM23 4h1v7h-1z"/><path class="piece-shade" d="M31 17c5 5 2 8-3 12h3l5-5c2-5 0-7-5-7z"/><path class="piece-detail" d="M17 30h14M18 33h12M24 19v7"/>'
 };
-export function pieceSvg(type) { return `<svg viewBox="0 0 48 48" aria-hidden="true">${paths[type] || paths.p}${base}</svg>`; }
+function originalSvg(type) { return `<svg viewBox="0 0 48 48" aria-hidden="true">${paths[type] || paths.p}${base}</svg>`; }
 const icons = {
   code: '<path d="m8 5-6 7 6 7M16 5l6 7-6 7M14 3l-4 18"/>',
   expand: '<path d="M9 3H3v6M15 3h6v6M3 15v6h6M21 15v6h-6"/>',
@@ -36,3 +36,12 @@ const icons = {
   person: '<circle cx="12" cy="7" r="4"/><path d="M4 22v-3a8 8 0 0 1 16 0v3"/>'
 };
 export const icon = name => `<svg viewBox="0 0 24 24" aria-hidden="true">${icons[name] || icons.info}</svg>`;
+
+
+// Bundled Neo images keep the Chess.com silhouettes. SVG color filters retain
+// dark outlines and map the light artwork to the four existing army colors.
+export const NEO_ROOT='/assets/pieces/neo/';
+export function pieceSvg(type) {
+  const safe=Object.hasOwn(paths,type)?type:'p';
+  return originalSvg(safe)+`<img class="neo-piece" src="${NEO_ROOT}w${safe}.png" alt="" aria-hidden="true" draggable="false" width="150" height="150">`;
+}
