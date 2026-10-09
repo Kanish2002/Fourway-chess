@@ -99,11 +99,13 @@ Opposite armies are partners. Teammates cannot capture or attack each other, and
 
 ## Verification coverage
 
-`npm run check` passes **71 tests** across the engine, application, sound, room service, room client, and HTTP integration suites. The geometric oracle checks all six piece types for all four colors from every playable origin to every playable target: **614,400 attack comparisons**. Additional regression cases cover blocking, pins, king adjacency, every castling orientation and unsafe path, all promotion choices, en passant including perpendicular pawns, scoring, multi-king checks, discovered mate notation, actual self-stalemate, team timing, walking kings, endgame bonuses, normalized repetition and quiet-move draws.
+`npm run check` passes **76 tests** across the engine, application, sound, room service, room client, and HTTP integration suites. The geometric oracle checks all six piece types for all four colors from every playable origin to every playable target: **614,400 attack comparisons**. Additional regression cases cover blocking, pins, king adjacency, every castling orientation and unsafe path, all promotion choices, en passant including perpendicular pawns, scoring, multi-king checks, discovered mate notation, actual self-stalemate, team timing, walking kings, endgame bonuses, normalized repetition and quiet-move draws.
 
 Seeded tests run 80 bot plies and 120 replayed plies in each variant. The application DOM fixture checks human/bot turn flow, drag/drop, arrows, clocks, timeout automation, setup, settings, review, undo and invalid import handling. Sound tests check event URLs, click signal profiles and fallback playback.
 
 Room regressions cover simultaneous joins, four-seat limits, host/minimum-player requirements, seat switching, both variants, forged tokens, turn ownership, illegal moves, duplicate commands, authoritative clocks, bot advancement, reconnect/expiry/takeover, host transfer, draw agreement, and online promotions in every orientation. Two independent HTTP clients create, join, start and play a synchronized game with two computers.
+
+Rendering regressions verify that selection, drag highlighting and bot-turn updates preserve existing piece nodes, moves replace only changed squares, animations survive subsequent renders, and loaded Neo images stay ready in new pieces and drag ghosts.
 
 The DOM fixture does not render CSS or replace browser visual QA. Browser screenshots and real-device audio playback were not available in the managed build environment. The classic sound CDN returned a challenge to the build environment; actual remote playback remains unverified, with tested local fallback.
 
@@ -113,6 +115,7 @@ The DOM fixture does not render CSS or replace browser visual QA. Browser screen
 | --- | --- |
 | `public/engine.js` | Pure rules, scoring, game endings and bots |
 | `public/app.js` | Interaction, clocks, dialogs, history and persistence |
+| `public/board-view.js` | Stable square/piece DOM updates without reload flicker |
 | `public/pieces.js`, `public/assets/pieces/neo/` | Bundled Neo artwork, SVG fallback and icons |
 | `public/rooms.js` | Tab membership, room requests and reconnect polling |
 | `api/rooms.js`, `server/` | Room endpoint, authoritative game flow and atomic Redis store |

@@ -41,7 +41,10 @@ export const icon = name => `<svg viewBox="0 0 24 24" aria-hidden="true">${icons
 // Bundled Neo images keep the Chess.com silhouettes. SVG color filters retain
 // dark outlines and map the light artwork to the four existing army colors.
 export const NEO_ROOT='/assets/pieces/neo/';
+const loadedPieces = new Set();
+export function markPieceLoaded(type) { if(Object.hasOwn(paths,type))loadedPieces.add(type); }
+export function markPieceFailed(type) { loadedPieces.delete(type); }
 export function pieceSvg(type) {
   const safe=Object.hasOwn(paths,type)?type:'p';
-  return originalSvg(safe)+`<img class="neo-piece" src="${NEO_ROOT}w${safe}.png" alt="" aria-hidden="true" draggable="false" width="150" height="150">`;
+  return originalSvg(safe)+`<img class="neo-piece${loadedPieces.has(safe)?' neo-ready':''}" data-piece-type="${safe}" src="${NEO_ROOT}w${safe}.png" alt="" aria-hidden="true" draggable="false" width="150" height="150">`;
 }

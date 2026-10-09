@@ -1,7 +1,8 @@
 import { COLORS, NAMES, newGame, clone, valid, index, coords, rotate, square, legalMoves, allMoves, play, inCheck, kingSquare, chooseBot, eliminate, draw, claimWin, allies, live } from './engine.js';
 import { RoomClient } from './rooms.js';
 import { playSound } from './sounds.js';
-import { pieceSvg, icon } from './pieces.js';
+import { patchBoard } from './board-view.js';
+import { pieceSvg, icon, markPieceLoaded, markPieceFailed } from './pieces.js';
 
 const $ = id => document.getElementById(id);
 const STORAGE = 'fourway.game.v1', PREFS = 'fourway.preferences.v1';
@@ -74,10 +75,10 @@ function displayState() {
 function pieceHtml(p, s = state) { return `<span class="piece ${live(s,p) ? COLORS[p.owner] : 'dead'}">${pieceSvg(p.type)}</span>`; }
 function renderBoard() {
   const s = displayState(), checkedKings = new Set(s.players.filter(p=>(p.active||p.zombie) && inCheck(s,p.id)).map(p=>kingSquare(s,p.id)));
-  let html = '';
+  const cells = [];
   for (let r=0;r<14;r++) for (let c=0;c<14;c++) {
     const [br,bc] = rotate(r,c,rotation), i=index(br,bc);
-    if (!valid(br,bc)) { html+='<div class="cell empty" aria-hidden="true"></div>'; continue; }
+    if (!valid(br,bc)) { cells.push({markup:'<div class="cell empty" aria-hidden="true"></div>'}); continue; }
     const p=s.board[i], legal=destinations.some(m=>m.to===i), last=s.lastMove && [s.lastMove.from,s.lastMove.to].includes(i);
     let classes = `cell ${(br+bc)%2 ? 'dark' : 'light'}`;
     if (p && live(s,p) && p.owner===s.turn && interactive()) classes+=' own-piece';
@@ -93,9 +94,13 @@ function renderBoard() {
     }
     let piece=p ? pieceHtml(p,s) : '';
     if(p && animationMove?.to===i && prefs.animation){const [fr,fc]=rotate(...coords(animationMove.from),(4-rotation)%4),[tr,tc]=rotate(br,bc,(4-rotation)%4);piece=piece.replace('class="piece ',`style="--move-x:${(fc-tc)*105.26}%;--move-y:${(fr-tr)*105.26}%" class="piece moving `);}
-    html+=`<button class="${classes}" data-square="${i}" aria-label="${label}" aria-pressed="${selected===i}" tabindex="${i===focusIndex ? 0 : -1}" title="${label}">${piece}${p?.promoted ? '<span class="promoted-mark" title="Promoted pawn">•</span>' : ''}${coordinates}</button>`;
+    const key=`${p?p.owner+p.type+Number(live(s,p))+Number(!!p.promoted):'empty'}:${br},${bc}:${Number(prefs.coordinates)}`;
+    const content=piece+(p?.promoted?'<span class="promoted-mark" title="Promoted pawn">•</span>':'')+coordinates;
+    const tabIndex=i===focusIndex?0:-1;
+    cells.push({square:i,className:classes,label,pressed:selected===i,tabIndex,key,content,
+      markup:`<button class="${classes}" data-square="${i}" data-content-key="${key}" aria-label="${label}" aria-pressed="${selected===i}" tabindex="${tabIndex}" title="${label}">${content}</button>`});
   }
-  $('board').innerHTML=html;
+  patchBoard($('board'),cells);
   animationMove=null;
   const corners=[['corner-nw',2],['corner-ne',3],['corner-sw',1],['corner-se',0]];
   for(const [id,base] of corners){
@@ -293,8 +298,9 @@ document.querySelectorAll('[data-icon]').forEach(el=>el.innerHTML=icon(el.datase
 window.addEventListener('pagehide',()=>{tick();save();});
 document.addEventListener('visibilitychange',()=>{tick();if(!document.hidden){render();save();}});
 // Reveal bundled Neo artwork after it loads; local SVG is a fallback for missing assets.
-document.addEventListener('load',e=>{if(e.target.classList?.contains('neo-piece'))e.target.classList.add('neo-ready');},true);
-document.addEventListener('error',e=>{if(e.target.classList?.contains('neo-piece'))e.target.classList.remove('neo-ready');},true);
+document.addEventListener('animationend',e=>{if(e.animationName==='slide-piece')e.target.classList?.remove('moving');},true);
+document.addEventListener('load',e=>{if(e.target.classList?.contains('neo-piece')){markPieceLoaded(e.target.dataset.pieceType);e.target.classList.add('neo-ready');}},true);
+document.addEventListener('error',e=>{if(e.target.classList?.contains('neo-piece')){markPieceFailed(e.target.dataset.pieceType);e.target.classList.remove('neo-ready');}},true);
 setInterval(tick,200);setInterval(()=>{if(started&&!state.result)save();},5000);
 render();
 
