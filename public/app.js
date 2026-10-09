@@ -9,7 +9,7 @@ const STORAGE = 'fourway.game.v1', PREFS = 'fourway.preferences.v1';
 const pieceNames = { p: 'pawn', n: 'knight', b: 'bishop', r: 'rook', q: 'queen', k: 'king' };
 let state = newGame(), events = [], undoStack = [], selected = null, destinations = [], rotation = 0, review = null, hintMove = null;
 let started = false, paused = false, botTimer = null, lastTick = performance.now(), toastTimer;
-let prefs = { sound: true, coordinates: true, hints: true, auto: false, animation: true, soundSet: 'classic', theme: 'sage' };
+let prefs = { sound: true, coordinates: true, auto: false, animation: true, soundSet: 'classic', theme: 'sage' };
 let storageWarned = false, focusIndex = index(12, 7), modalWasPaused = true;
 let online=null, onlineConnected=false;
 const rooms=new RoomClient({onUpdate:applyRoom,onError:roomFailure});
@@ -84,7 +84,7 @@ function renderBoard() {
     if (p && live(s,p) && p.owner===s.turn && interactive()) classes+=' own-piece';
     if(drag?.moved && i===drag.from)classes+=' drag-source';
     if (last) classes+=' last'; if (i===selected) classes+=' selected'; if (checkedKings.has(i)) classes+=' check';
-    if (prefs.hints && legal) classes+=' legal'+(p || destinations.some(m=>m.to===i && m.ep!==undefined) ? ' capture' : '');
+    if (legal) classes+=' legal'+(p || destinations.some(m=>m.to===i && m.ep!==undefined) ? ' capture' : '');
     if (hintMove && [hintMove.from,hintMove.to].includes(i)) classes+=' hinted';
     const label=`${square(i)}${p ? ', '+NAMES[p.owner]+' '+pieceNames[p.type]+(!live(s,p) ? ', inactive' : '') : ', empty'}${legal ? ', legal destination' : ''}`;
     let coordinates='';
@@ -249,8 +249,8 @@ basics:`<div class="rule-body"><h3>Your pieces already know what to do.</h3><p>K
 function renderRules(kind){$('rules-content').innerHTML=rules[kind];document.querySelectorAll('[data-rule]').forEach(b=>b.classList.toggle('selected',b.dataset.rule===kind));}
 function showRules(){renderRules(state.options.variant);openDialog('rules-dialog');}
 $('nav-rules').onclick=()=>setTab('guide');$('full-rules').onclick=showRules;$('quick-rules').onclick=showRules;document.querySelectorAll('[data-rule]').forEach(b=>b.onclick=()=>renderRules(b.dataset.rule));
-$('nav-settings').onclick=()=>{for(const key of ['sound','coordinates','hints','auto','animation'])$('pref-'+key).checked=prefs[key];$('pref-theme').value=prefs.theme;$('pref-soundSet').value=prefs.soundSet;openDialog('prefs-dialog');};
-for(const key of ['sound','coordinates','hints','auto','animation'])$('pref-'+key).onchange=e=>{prefs[key]=e.target.checked;save();render();};
+$('nav-settings').onclick=()=>{for(const key of ['sound','coordinates','auto','animation'])$('pref-'+key).checked=prefs[key];$('pref-theme').value=prefs.theme;$('pref-soundSet').value=prefs.soundSet;openDialog('prefs-dialog');};
+for(const key of ['sound','coordinates','auto','animation'])$('pref-'+key).onchange=e=>{prefs[key]=e.target.checked;save();render();};
 $('pref-soundSet').onchange=e=>{prefs.soundSet=e.target.value;save();sound('move');};
 $('board-settings').onclick=()=>$('nav-settings').onclick();
 $('pref-theme').onchange=e=>{prefs.theme=e.target.value;save();render();};

@@ -30,7 +30,7 @@ test('application supports local moves, bots, review, settings, computer-only pl
   const dialogs=['setup','rules','prefs','confirm','promotion','room'].map(id=>get(id+'-dialog'));
   const docListeners={};const document={dispatch(name,event={}){for(const fn of docListeners[name]||[])fn({preventDefault(){},...event});},getElementById:get,body:new Element(),hidden:false,querySelector:s=>s==='dialog[open]'?dialogs.find(d=>d.open)||null:get(s),querySelectorAll:s=>s==='dialog'?dialogs:[],addEventListener(name,fn){(docListeners[name]||=[]).push(fn);},createElement:()=>new Element()};
   get('setup-form').elements=Object.fromEntries(Object.entries({mode:'solo',variant:'ffa',clock:'10,2',human:'0',difficulty:'normal'}).map(([k,value])=>[k,{value}]));
-  storage.set('fourway.preferences.v1',JSON.stringify({sound:false}));
+  storage.set('fourway.preferences.v1',JSON.stringify({sound:false,hints:false}));
   const roomService=new RoomService(new MemoryStore(()=>now),{now:()=>now});
   const original={fetch:globalThis.fetch,sessionStorage:globalThis.sessionStorage,document:globalThis.document,window:globalThis.window,localStorage:globalThis.localStorage,setTimeout:globalThis.setTimeout,clearTimeout:globalThis.clearTimeout,setInterval:globalThis.setInterval,FormData:globalThis.FormData,performance:globalThis.performance};
   Object.assign(globalThis,{fetch:async(url,options)=>{try{const result=await roomService.dispatch(JSON.parse(options.body),'app-client');return{ok:true,json:async()=>result};}catch(error){return{ok:false,status:error.status||500,json:async()=>({error:error.message})};}},sessionStorage:{getItem:()=>null,setItem(){},removeItem(){}},document,window:{addEventListener(){}},localStorage:{getItem:k=>storage.get(k)||null,setItem:(k,v)=>storage.set(k,v)},setTimeout:(fn,delay)=>{const id=++tid;timers.set(id,{fn,delay});return id;},clearTimeout:id=>timers.delete(id),performance:{now:()=>now},setInterval:(fn,delay)=>{intervals.push({fn,delay});return 0;},FormData:class{constructor(form){this.form=form;}get(key){return this.form.elements[key].value;}}});
@@ -41,6 +41,7 @@ test('application supports local moves, bots, review, settings, computer-only pl
     assert.match(get('board-status').innerHTML,/Red to move/);
     const clickSquare=i=>{const cell=new Element();cell.dataset.square=String(i);get('board').dispatch('click',{target:cell});};
     clickSquare(at(12,7));assert.match(get('board').innerHTML,/cell [^"]+ selected/);assert.match(get('board').innerHTML,/legal destination/);
+    assert.match(get('board').innerHTML,/class="cell [^"]*legal[^" ]*"[^>]*data-square="147"/,'legal dots appear even with an old saved hints:false preference');
     clickSquare(at(10,7));assert.match(get('board-status').innerHTML,/Blue to move/);
     assert.equal(JSON.parse(storage.get('fourway.game.v1')).events.length,1);
     now=2000;intervals.find(t=>t.delay===200).fn();assert.equal(get('clock-1').textContent,'9:58');
@@ -57,7 +58,7 @@ test('application supports local moves, bots, review, settings, computer-only pl
     assert.equal(get('mode-label').textContent,'PASS & PLAY');assert.equal(get('variant-label').textContent,'Teams · 2 vs 2');assert.equal(get('draw').disabled,false);
     const cell=new Element();cell.dataset.square=String(at(12,7));
     get('board').dispatch('pointerdown',{target:cell,button:0,pointerId:1,clientX:375,clientY:625});
-    document.dispatch('pointermove',{pointerId:1,clientX:375,clientY:525});assert.equal(get('drag-piece').hidden,false);
+    document.dispatch('pointermove',{pointerId:1,clientX:375,clientY:525});assert.equal(get('drag-piece').hidden,false);assert.match(get('board').innerHTML,/class="cell [^"]*legal/,'dragging also shows destinations');
     document.dispatch('pointerup',{button:0,pointerId:1,clientX:375,clientY:525});assert.equal(get('drag-piece').hidden,true);
     // A browser dispatches click after pointerup; it must not accidentally re-select or move.
     clickSquare(at(10,7));assert.match(get('board-status').innerHTML,/Blue to move/);assert.equal(JSON.parse(storage.get('fourway.game.v1')).events.length,1);assert(![...timers.values()].some(t=>t.delay===600),'local mode never schedules a bot');

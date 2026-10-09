@@ -1,6 +1,6 @@
 # Fourway Chess
 
-Play four-player chess on a 160-square cross-shaped board. The playing screen takes its cues from Chess.com: a dark navigation rail, sage-and-cream squares, prominent clocks, move history a continuous cross-board border, and Chess.com Neo piece silhouettes recolored for the four armies. Neo PNGs are bundled locally; original SVGs remain as a fallback. Fourway is an independent project, not affiliated with Chess.com. See the [asset attribution](public/assets/pieces/neo/ATTRIBUTION.md).
+Play four-player chess on a 160-square cross-shaped board. The playing screen takes its cues from Chess.com: a dark navigation rail, sage-and-cream squares, prominent clocks, move history, a wooden frame outside the cross-shaped playing surface, and Chess.com Neo piece silhouettes recolored for the four armies. Neo PNGs are bundled locally; original SVGs remain as a fallback. Fourway is an independent project, not affiliated with Chess.com. See the [asset attribution](public/assets/pieces/neo/ATTRIBUTION.md).
 
 **Play:** https://fourway-chess.vercel.app/
 
@@ -15,7 +15,7 @@ Play four-player chess on a 160-square cross-shaped board. The playing screen ta
 - Free-for-all scoring and opposite-side teams: Red + Yellow versus Blue + Green.
 - Click or drag pieces, see legal destinations, animate moves, rotate the board and use focus mode.
 - Right-drag or Shift-drag to draw arrows; right-click to circle a square. Left-click clears annotations.
-- Corner clocks, increments, captures, check highlights, move history and position review.
+- Spacious player clocks above and below the board, increments, captures, check highlights, move history and position review. Legal destinations always appear as dots or capture rings when selecting or dragging a piece.
 - Undo, hints, pause, local autosave, saved-game export/import, three palettes and sound settings.
 - Classic sounds reference Chess.com's public sound CDN. If playback fails, the app uses synthesized wooden clicks. Wood mode works locally. Browsers may block audio until the first user interaction.
 
