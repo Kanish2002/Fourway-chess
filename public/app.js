@@ -105,6 +105,7 @@ function renderBoard() {
   const corners=[['corner-nw',2],['corner-ne',3],['corner-sw',1],['corner-se',0]];
   for(const [id,base] of corners){
     const owner=(base+rotation)%4,p=s.players[owner],you=online ? owner===online.you : s.options.mode==='solo' && owner===s.options.human,current=owner===s.turn&&!s.result;
+    $(id).setAttribute('aria-label',`${NAMES[owner]}${you?', your army':''} clock`);
     $(id).innerHTML=`<div class="corner-player ${p.color}${!p.active&&!p.zombie?' eliminated':''}${p.zombie?' zombie':''}"><div class="corner-heading"><span class="corner-avatar">${pieceHtml({type:'k',owner},s)}</span><div><strong>${NAMES[owner]}${you?' · You':''}</strong><small>${p.zombie?'Dead king walking':!p.active?p.status:you?'You':online?escapeHtml(online.seats[owner]?.name||'Open seat'):s.options.mode==='local'?'Local player':'Computer'}</small></div></div><div class="corner-clock${current?' current':''}" id="corner-clock-${owner}"><span class="icon">${icon('history')}</span><span id="corner-time-${owner}">${p.zombie?'—':timeText(p.time)}</span></div><div class="corner-points">${s.options.variant==='ffa'?p.score+' points':owner%2?'Blue + Green':'Red + Yellow'}</div></div>`;
   }
   renderAnnotations();

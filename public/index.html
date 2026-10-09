@@ -24,7 +24,6 @@
       <div class="game-layout">
         <section class="arena" aria-label="Four-player chess arena">
           <div class="arena-heading"><div class="arena-title"><span class="icon" data-icon="board"></span><h1>4 Player Chess</h1><span class="chip" id="mode-label">VS BOTS</span></div><button class="tool-button" id="board-settings" title="Board settings" aria-label="Board settings"><span class="icon" data-icon="settings"></span></button></div>
-          <div class="clock-strip" role="group" aria-label="Players above the board"><div class="corner corner-nw" id="corner-nw"></div><div class="corner corner-ne" id="corner-ne"></div></div>
           <div class="board-wrap" id="board-wrap">
             <svg class="board-border" viewBox="0 0 140 140" aria-hidden="true">
               <defs>
@@ -43,9 +42,9 @@
             </svg>
             <div class="board" id="board" role="group" aria-label="Four-player chess board. Use arrow keys to navigate squares and Enter to select."></div>
             <svg class="annotation-layer" id="annotations" viewBox="0 0 14 14" aria-hidden="true"><defs><marker id="arrow-head" markerWidth="3" markerHeight="3" refX="1.7" refY="1.5" orient="auto" markerUnits="strokeWidth"><path d="M0 0 2.6 1.5 0 3z"/></marker></defs><g id="annotation-shapes"></g></svg>
+            <div class="corner corner-nw" id="corner-nw" role="group"></div><div class="corner corner-ne" id="corner-ne" role="group"></div><div class="corner corner-sw" id="corner-sw" role="group"></div><div class="corner corner-se" id="corner-se" role="group"></div>
             <div class="drag-piece" id="drag-piece" hidden></div><div class="board-result" id="board-result" hidden></div>
           </div>
-          <div class="clock-strip" role="group" aria-label="Players below the board"><div class="corner corner-sw" id="corner-sw"></div><div class="corner corner-se" id="corner-se"></div></div>
           <div class="board-tools"><div class="board-status" id="board-status">Red to move</div><div class="tool-group"><button class="tool-button" id="undo" title="Take back" aria-label="Undo"><span class="icon" data-icon="undo"></span></button><button class="tool-button" id="hint" title="Hint" aria-label="Show a suggested move"><span class="icon" data-icon="bulb"></span></button><button class="tool-button" id="rotate" title="Flip board" aria-label="Rotate board"><span class="icon" data-icon="rotate"></span></button><button class="tool-button" id="sound" title="Sound" aria-label="Toggle sound" aria-pressed="true"><span class="icon" data-icon="sound"></span></button><button class="tool-button" id="pause" title="Pause" aria-label="Pause game"><span class="icon" data-icon="pause"></span></button><button class="tool-button" id="fullscreen" title="Focus mode" aria-label="Toggle focus mode"><span class="icon" data-icon="expand"></span></button></div></div>
           <div class="arena-footer"><span id="help-line">Drag a piece or click to move.</span><button id="quick-rules">Rules <span>↗</span></button></div>
         </section>
