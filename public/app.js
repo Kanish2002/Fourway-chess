@@ -1,25 +1,29 @@
 import { COLORS, NAMES, newGame, clone, valid, index, coords, rotate, square, legalMoves, allMoves, play, inCheck, kingSquare, chooseBot, eliminate, draw, claimWin, allies, live } from './engine.js';
+import { RoomClient } from './rooms.js';
 import { playSound } from './sounds.js';
-import { pieceSvg, icon } from './pieces.js';
+import { patchBoard } from './board-view.js';
+import { pieceSvg, icon, markPieceLoaded, markPieceFailed } from './pieces.js';
 
 const $ = id => document.getElementById(id);
 const STORAGE = 'fourway.game.v1', PREFS = 'fourway.preferences.v1';
 const pieceNames = { p: 'pawn', n: 'knight', b: 'bishop', r: 'rook', q: 'queen', k: 'king' };
 let state = newGame(), events = [], undoStack = [], selected = null, destinations = [], rotation = 0, review = null, hintMove = null;
 let started = false, paused = false, botTimer = null, lastTick = performance.now(), toastTimer;
-let prefs = { sound: true, coordinates: true, hints: true, auto: false, animation: true, soundSet: 'classic', theme: 'sage' };
+let prefs = { sound: true, coordinates: true, auto: false, animation: true, soundSet: 'classic', theme: 'sage' };
 let storageWarned = false, focusIndex = index(12, 7), modalWasPaused = true;
+let online=null, onlineConnected=false;
+const rooms=new RoomClient({onUpdate:applyRoom,onError:roomFailure});
 let drag = null, suppressClick = false, animationMove = null, annotations = [], arrowStart = null;
 
 function toast(message) { $('toast').textContent = message; $('toast').classList.add('show'); clearTimeout(toastTimer); toastTimer = setTimeout(() => $('toast').classList.remove('show'), 3500); }
 function announce(message) { $('announcement').textContent = message; }
 function save() {
-  try { localStorage.setItem(STORAGE, JSON.stringify({ format: 'fourway-v1', options: state.options, events, started, clocks:state.players.map(p=>p.time) })); localStorage.setItem(PREFS, JSON.stringify(prefs)); }
+  try { if(!online)localStorage.setItem(STORAGE, JSON.stringify({ format: 'fourway-v1', options: state.options, events, started, clocks:state.players.map(p=>p.time) })); localStorage.setItem(PREFS, JSON.stringify(prefs)); }
   catch { if (!storageWarned) { toast('This browser cannot save your game. Use Export to keep a copy.'); storageWarned = true; } }
 }
 function safeOptions(o) {
-  if (!o || !['ffa', 'teams'].includes(o.variant) || !['solo', 'local'].includes(o.mode) || ![0,1,2,3].includes(o.human) || !['easy','normal','hard'].includes(o.difficulty) || ![0,3,5,10,15].includes(o.minutes) || ![0,2,5].includes(o.increment)) throw new Error('Unsupported game settings.');
-  return { variant:o.variant, mode:o.mode, human:o.human, difficulty:o.difficulty, minutes:o.minutes, increment:o.increment };
+  if (!o || !['ffa', 'teams'].includes(o.variant) || !['solo', 'local', 'watch', 'online'].includes(o.mode) || ![0,1,2,3].includes(o.human) || !['easy','normal','hard'].includes(o.difficulty) || ![0,3,5,10,15].includes(o.minutes) || ![0,2,5].includes(o.increment)) throw new Error('Unsupported game settings.');
+  return { variant:o.variant, mode:o.mode==='online'?'local':o.mode, human:o.human, difficulty:o.difficulty, minutes:o.minutes, increment:o.increment };
 }
 function replayEvent(s, e) {
   if (s.result) throw new Error('The record continues after game over.');
@@ -59,7 +63,7 @@ try {
   if (stored) { const restored = loadRecord(stored); state = restored.state; events = restored.events; undoStack = restored.stack; started = !!stored.started; paused = started && !state.result; rotation = state.options.mode === 'solo' ? state.options.human : 0; }
 } catch { toast('The saved game could not be restored. A fresh board is ready.'); }
 
-const humanTurn = () => state.players[state.turn].active && (state.options.mode === 'local' || state.turn === state.options.human);
+const humanTurn = () => state.players[state.turn].active && (online ? onlineConnected && online.status==='playing' && state.turn===online.you && !online.seats[online.you]?.bot : state.options.mode === 'local' || (state.options.mode === 'solo' && state.turn === state.options.human));
 const interactive = () => !state.result && review === null && !paused && humanTurn() && !document.querySelector('dialog[open]');
 function sound(kind='move') { if(prefs.sound)playSound(kind,prefs.soundSet); }
 function displayState() {
@@ -71,16 +75,16 @@ function displayState() {
 function pieceHtml(p, s = state) { return `<span class="piece ${live(s,p) ? COLORS[p.owner] : 'dead'}">${pieceSvg(p.type)}</span>`; }
 function renderBoard() {
   const s = displayState(), checkedKings = new Set(s.players.filter(p=>(p.active||p.zombie) && inCheck(s,p.id)).map(p=>kingSquare(s,p.id)));
-  let html = '';
+  const cells = [];
   for (let r=0;r<14;r++) for (let c=0;c<14;c++) {
     const [br,bc] = rotate(r,c,rotation), i=index(br,bc);
-    if (!valid(br,bc)) { html+='<div class="cell empty" aria-hidden="true"></div>'; continue; }
+    if (!valid(br,bc)) { cells.push({markup:'<div class="cell empty" aria-hidden="true"></div>'}); continue; }
     const p=s.board[i], legal=destinations.some(m=>m.to===i), last=s.lastMove && [s.lastMove.from,s.lastMove.to].includes(i);
     let classes = `cell ${(br+bc)%2 ? 'dark' : 'light'}`;
     if (p && live(s,p) && p.owner===s.turn && interactive()) classes+=' own-piece';
     if(drag?.moved && i===drag.from)classes+=' drag-source';
     if (last) classes+=' last'; if (i===selected) classes+=' selected'; if (checkedKings.has(i)) classes+=' check';
-    if (prefs.hints && legal) classes+=' legal'+(p || destinations.some(m=>m.to===i && m.ep!==undefined) ? ' capture' : '');
+    if (legal) classes+=' legal'+(p || destinations.some(m=>m.to===i && m.ep!==undefined) ? ' capture' : '');
     if (hintMove && [hintMove.from,hintMove.to].includes(i)) classes+=' hinted';
     const label=`${square(i)}${p ? ', '+NAMES[p.owner]+' '+pieceNames[p.type]+(!live(s,p) ? ', inactive' : '') : ', empty'}${legal ? ', legal destination' : ''}`;
     let coordinates='';
@@ -90,21 +94,26 @@ function renderBoard() {
     }
     let piece=p ? pieceHtml(p,s) : '';
     if(p && animationMove?.to===i && prefs.animation){const [fr,fc]=rotate(...coords(animationMove.from),(4-rotation)%4),[tr,tc]=rotate(br,bc,(4-rotation)%4);piece=piece.replace('class="piece ',`style="--move-x:${(fc-tc)*105.26}%;--move-y:${(fr-tr)*105.26}%" class="piece moving `);}
-    html+=`<button class="${classes}" data-square="${i}" aria-label="${label}" aria-pressed="${selected===i}" tabindex="${i===focusIndex ? 0 : -1}" title="${label}">${piece}${p?.promoted ? '<span class="promoted-mark" title="Promoted pawn">•</span>' : ''}${coordinates}</button>`;
+    const key=`${p?p.owner+p.type+Number(live(s,p))+Number(!!p.promoted):'empty'}:${br},${bc}:${Number(prefs.coordinates)}`;
+    const content=piece+(p?.promoted?'<span class="promoted-mark" title="Promoted pawn">•</span>':'')+coordinates;
+    const tabIndex=i===focusIndex?0:-1;
+    cells.push({square:i,className:classes,label,pressed:selected===i,tabIndex,key,content,
+      markup:`<button class="${classes}" data-square="${i}" data-content-key="${key}" aria-label="${label}" aria-pressed="${selected===i}" tabindex="${tabIndex}" title="${label}">${content}</button>`});
   }
-  $('board').innerHTML=html;
+  patchBoard($('board'),cells);
   animationMove=null;
   const corners=[['corner-nw',2],['corner-ne',3],['corner-sw',1],['corner-se',0]];
   for(const [id,base] of corners){
-    const owner=(base+rotation)%4,p=s.players[owner],you=s.options.mode==='solo' && owner===s.options.human,current=owner===s.turn&&!s.result;
-    $(id).innerHTML=`<div class="corner-player ${p.color}${!p.active&&!p.zombie?' eliminated':''}${p.zombie?' zombie':''}"><div class="corner-heading"><span class="corner-avatar">${pieceHtml({type:'k',owner},s)}</span><div><strong>${NAMES[owner]}${you?' · You':''}</strong><small>${p.zombie?'Dead king walking':!p.active?p.status:you?'You':s.options.mode==='solo'?'Computer':'Local player'}</small></div></div><div class="corner-clock${current?' current':''}" id="corner-clock-${owner}"><span class="icon">${icon('history')}</span><span id="corner-time-${owner}">${p.zombie?'—':timeText(p.time)}</span></div><div class="corner-points">${s.options.variant==='ffa'?p.score+' points':owner%2?'Blue + Green':'Red + Yellow'}</div></div>`;
+    const owner=(base+rotation)%4,p=s.players[owner],you=online ? owner===online.you : s.options.mode==='solo' && owner===s.options.human,current=owner===s.turn&&!s.result;
+    $(id).setAttribute('aria-label',`${NAMES[owner]}${you?', your army':''} clock`);
+    $(id).innerHTML=`<div class="corner-player ${p.color}${!p.active&&!p.zombie?' eliminated':''}${p.zombie?' zombie':''}"><div class="corner-heading"><span class="corner-avatar">${pieceHtml({type:'k',owner},s)}</span><div><strong>${NAMES[owner]}${you?' · You':''}</strong><small>${p.zombie?'Dead king walking':!p.active?p.status:you?'You':online?escapeHtml(online.seats[owner]?.name||'Open seat'):s.options.mode==='local'?'Local player':'Computer'}</small></div></div><div class="corner-clock${current?' current':''}" id="corner-clock-${owner}"><span class="icon">${icon('history')}</span><span id="corner-time-${owner}">${p.zombie?'—':timeText(p.time)}</span></div><div class="corner-points">${s.options.variant==='ffa'?p.score+' points':owner%2?'Blue + Green':'Red + Yellow'}</div></div>`;
   }
   renderAnnotations();
   renderOverlay();
 }
 function renderOverlay() {
   const overlay=$('board-result');
-  if (review!==null || (!state.result && !paused)) { overlay.hidden=true; return; }
+  if (review!==null || (!state.result && (!paused || online))) { overlay.hidden=true; return; }
   overlay.hidden=false;
   if (state.result) {
     const winner=state.result.winners.map(i=>NAMES[i]).join(' + '), title=state.result.winners.length ? `${winner} ${state.result.winners.length===1 ? 'wins' : state.options.variant==='teams' ? 'win' : 'tie'}!` : 'A well-played draw.';
@@ -115,9 +124,9 @@ function timeText(time) { if (!state.options.minutes) return '∞'; const secs=M
 function renderPlayers() {
   const shown=displayState();
   $('players').innerHTML=shown.players.map(p=> {
-    const you=state.options.mode==='solo' && p.id===state.options.human, bot=state.options.mode==='solo' && !you;
+    const you=online?p.id===online.you:state.options.mode==='solo' && p.id===state.options.human, bot=online?online.seats[p.id]?.bot:state.options.mode==='watch'||state.options.mode==='solo' && !you;
     const current=p.id===shown.turn && !shown.result, teammate=state.options.variant==='teams' ? ` · ${NAMES[(p.id+2)%4]}’s ally` : '';
-    const subtitle=p.zombie?'Dead king walking':!p.active ? p.status : current ? (paused ? 'Paused' : bot ? 'Thinking…' : started ? 'Your move' : 'Ready to begin') : p.status==='Check' ? 'In check' : bot ? 'Computer'+teammate : 'Local player'+teammate;
+    const subtitle=p.zombie?'Dead king walking':!p.active ? p.status : current ? (paused&&!online ? 'Paused' : bot ? 'Thinking…' : started ? 'Your move' : 'Ready to begin') : p.status==='Check' ? 'In check' : bot ? 'Computer'+teammate : (online?escapeHtml(online.seats[p.id]?.name||'Open seat'):'Local player')+teammate;
     return `<div class="player-card ${p.color}${current?' current':''}${!p.active&&!p.zombie?' eliminated':''}${p.zombie?' zombie':''}${p.status==='Check'?' checked':''}"><div class="player-avatar"><span class="icon">${icon(bot?'bot':'person')}</span></div><div class="player-details"><div class="player-name">${NAMES[p.id]}${you?'<span class="you-tag">YOU</span>':''}</div><div class="player-subtitle">${subtitle}</div>${p.captured.length?'<div class="captured-pieces">'+p.captured.slice(-10).map(c=>pieceHtml(c)).join('')+'</div>':''}</div><div class="player-numbers"><div class="clock${p.time<30000 && state.options.minutes?' low':''}" id="clock-${p.id}">${p.zombie?'—':timeText(p.time)}</div><div class="score">${state.options.variant==='ffa'?`<b>${p.score}</b> points`:p.id%2?'Blue + Green':'Red + Yellow'}</div></div></div>`;
   }).join('');
 }
@@ -131,38 +140,43 @@ function renderHistory() {
 function render() {
   document.body.dataset.theme=prefs.theme;
   $('variant-label').textContent=state.options.variant==='teams'?'Teams · 2 vs 2':'Free-for-all';
-  $('mode-label').textContent=state.options.mode==='solo'?'VS BOTS':'PASS & PLAY';
+  $('mode-label').textContent=online?'ONLINE':state.options.mode==='watch'?'ALL COMPUTERS':state.options.mode==='solo'?'VS BOTS':'PASS & PLAY';
   $('time-control').textContent=state.options.minutes?`${state.options.minutes} min${state.options.increment?' + '+state.options.increment+' sec':''}`:'Untimed';
   $('round-label').textContent='ROUND '+(Math.floor(state.ply/4)+1);
-  $('board-status').innerHTML=review!==null?'Reviewing move '+review:state.result?'Game complete':paused?'Game paused':`<span class="player-dot ${COLORS[state.turn]}"></span>${NAMES[state.turn]} ${inCheck(state,state.turn)?'is in check':'to move'}`;
-  $('help-line').textContent=review!==null?'Review mode. Return to live position to keep playing.':state.options.mode==='solo'?`You are ${NAMES[state.options.human]}. ${inCheck(state,state.options.human)&&state.players[state.options.human].active?'Your king is in check.':'Drag a piece or click to move.'}`:'Pass & play. Each player controls the army whose turn it is.';
+  $('board-status').innerHTML=review!==null?'Reviewing move '+review:state.result?'Game complete':paused&&!online?'Game paused':`<span class="player-dot ${COLORS[state.turn]}"></span>${NAMES[state.turn]} ${inCheck(state,state.turn)?'is in check':'to move'}`;
+  $('help-line').textContent=online?(!onlineConnected?'Reconnecting… Moves are disabled until the room syncs.':online.status==='lobby'?'Waiting in the room. The host can start with two or more players.':`You are ${NAMES[online.you]}. ${state.turn===online.you?'Your move.':'Waiting for '+NAMES[state.turn]+'.'}`):state.options.mode==='watch'?'Four computers are playing. Pause to inspect the board.':review!==null?'Review mode. Return to live position to keep playing.':state.options.mode==='solo'?`You are ${NAMES[state.options.human]}. ${inCheck(state,state.options.human)&&state.players[state.options.human].active?'Your king is in check.':'Drag a piece or click to move.'}`:'Pass & play. Each player controls the army whose turn it is.';
   $('review-label').textContent=review===null?'Live position':`Move ${review} / ${state.history.length}`;
   $('pause').innerHTML=`<span class="icon">${icon(paused?'play':'pause')}</span>`; $('pause').title=paused?'Resume game':'Pause game'; $('pause').setAttribute('aria-label',$('pause').title);
   $('sound').innerHTML=`<span class="icon">${icon(prefs.sound?'sound':'mute')}</span>`; $('sound').setAttribute('aria-pressed',String(prefs.sound));
-  $('undo').disabled=!undoStack.length || review!==null;
-  $('hint').disabled=!interactive(); $('pause').disabled=!!state.result || review!==null;
-  $('resign').disabled=!!state.result || review!==null || !state.players[state.options.mode==='solo'?state.options.human:state.turn].active;
-  $('draw').disabled=!!state.result || review!==null || state.options.mode==='solo'; $('draw').title=state.options.mode==='solo'?'Draw by agreement is available in pass & play':'Agree to a draw with all players';
+  $('undo').disabled=!!online || !undoStack.length || review!==null;
+  $('hint').disabled=!!online || !interactive(); $('pause').disabled=!!online || !!state.result || review!==null;
+  $('resign').disabled=state.options.mode==='watch' || !!state.result || review!==null || !state.players[online?online.you:state.options.mode==='solo'?state.options.human:state.turn].active;
+  $('draw').disabled=!!state.result || review!==null || (!online && state.options.mode!=='local') || !!online && (online.status!=='playing' || !state.players[online.you].active); $('draw').title=state.options.mode==='solo'?'Draw by agreement is available in pass & play':'Agree to a draw with all players';
   $('review-first').disabled=!state.history.length; $('review-prev').disabled=!state.history.length || review===0;
   $('review-next').disabled=review===null || review>=state.history.length; $('review-live').disabled=review===null;
-  const test=clone(state); $('claim').hidden=!claimWin(test,state.options.mode==='solo'?state.options.human:state.turn);
+  const test=clone(state); $('claim').hidden=state.options.mode==='watch' || !claimWin(test,online?online.you:state.options.mode==='solo'?state.options.human:state.turn);
   $('strategy-tip').textContent=state.options.variant==='teams'?'Your partner sits across the board. Coordinate attacks, block checks for each other, and protect both kings.':'Your next opponent sits to your left. Develop your pieces, protect your king, and watch all three fronts.';
+  if(online){$('resign').disabled ||= online.status!=='playing';}
+  $('room-banner').hidden=!online;$('room-status').textContent=online?`Room ${online.code} · ${onlineConnected?'Connected':'Reconnecting'}`:'';
+  $('session-footer').textContent=online?'Online room · synced with the server':'Local game · automatically saved';
   renderBoard();renderPlayers();renderHistory();scheduleBot();
 }
 function tick() {
   const now=performance.now(), delta=Math.max(0,now-lastTick);lastTick=now;
-  if(!started || paused || state.result || !state.options.minutes) return;
+  if(!started || (!online && paused) || state.result || !state.options.minutes) return;
   const p=state.players[state.turn];if(p.zombie)return;p.time=Math.max(0,p.time-delta);
   if($('clock-'+p.id)) { $('clock-'+p.id).textContent=timeText(p.time);$('clock-'+p.id).classList.toggle('low',p.time<30000); }
   if($('corner-time-'+p.id))$('corner-time-'+p.id).textContent=timeText(p.time);
+  if(online)return; // Server owns timeout decisions, even while this tab is in a dialog.
   if(p.time===0) { events.push({type:'eliminate',owner:p.id,reason:'Time out',time:state.players.map(p=>p.time)});eliminate(state,p.id,'Time out');selected=null;destinations=[];save();render();toast(`${NAMES[p.id]} ran out of time.`); }
 }
 function scheduleBot() {
   clearTimeout(botTimer);
-  if((state.options.mode!=='solo' && !state.players[state.turn].zombie) || humanTurn() || paused || review!==null || state.result || document.querySelector('dialog[open]'))return;
+  if(online || ((state.options.mode!=='solo' && state.options.mode!=='watch') && !state.players[state.turn].zombie) || humanTurn() || paused || review!==null || state.result || document.querySelector('dialog[open]'))return;
   botTimer=setTimeout(()=>{tick();if(paused||review!==null||state.result||humanTurn())return;const move=chooseBot(state);if(move)makeMove(move);},state.options.difficulty==='hard'?850:600);
 }
 function makeMove(move) {
+  if(online){if(!interactive() || rooms.pending)return;selected=null;destinations=[];sendRoom('move',{from:move.from,to:move.to,promotion:move.promotion||null});return;}
   tick();if(state.result || state.board[move.from]?.owner!==state.turn)return;
   undoStack.push({state:clone(state),eventLen:events.length});if(undoStack.length>100)undoStack.shift();
   events.push({type:'move',from:move.from,to:move.to,promotion:move.promotion||null,time:state.players.map(p=>p.time)});
@@ -171,7 +185,7 @@ function makeMove(move) {
   sound(state.result?'end':state.history.at(-1).notation.includes('+')||state.history.at(-1).notation.includes('#')?'check':state.lastMove.castle?'castle':capture?'capture':'move');save();render();announce(`${NAMES[state.lastMove.owner]} played ${state.history.at(-1).notation}. ${state.result?'Game over.':NAMES[state.turn]+' to move.'}`);
 }
 function selectSquare(i) {
-  if(!interactive()) {if(review!==null)toast('Return to the live position to play.');else if(!humanTurn())toast('Wait for your turn.');return;}
+  if(!interactive()) {if(review!==null)toast('Return to the live position to play.');else if(state.options.mode==='watch')toast('Computers are playing.');else if(!humanTurn())toast('Wait for your turn.');return;}
   const moves=destinations.filter(m=>m.to===i);
   if(moves.length) {
     if(moves.length>1) {
@@ -188,25 +202,25 @@ $('board').addEventListener('keydown',e=>{
   const b=e.target.closest('[data-square]');if(!b)return;const [r,c]=coords(Number(b.dataset.square)),[vr,vc]=rotate(r,c,(4-rotation)%4),[dr,dc]=deltas[e.key];
   for(let k=1;k<14;k++){const nr=vr+dr*k,nc=vc+dc*k;if(nr<0||nr>13||nc<0||nc>13)break;const [br,bc]=rotate(nr,nc,rotation);if(valid(br,bc)){focusIndex=index(br,bc);const next=$('board').querySelector(`[data-square="${focusIndex}"]`);b.tabIndex=-1;next.tabIndex=0;next.focus();break;}}
 });
-function setPause(value) {tick();paused=value;lastTick=performance.now();selected=null;destinations=[];save();render();}
+function setPause(value) {if(online)return;tick();paused=value;lastTick=performance.now();selected=null;destinations=[];save();render();}
 function openDialog(id) {tick();modalWasPaused=paused;paused=true;clearTimeout(botTimer);$(id).showModal();}
 document.querySelectorAll('dialog').forEach(d=>{
   d.querySelectorAll('.close-dialog').forEach(b=>b.addEventListener('click',()=>d.close()));
-  d.addEventListener('close',()=>{paused=modalWasPaused;lastTick=performance.now();render();});
+  d.addEventListener('close',()=>{paused=online?false:modalWasPaused;lastTick=performance.now();render();});
   d.addEventListener('click',e=>{const r=d.getBoundingClientRect();if(e.target===d&&(e.clientX<r.left||e.clientX>r.right||e.clientY<r.top||e.clientY>r.bottom))d.close();});
 });
 function setup() {
-  const f=$('setup-form');f.elements.mode.value=state.options.mode;f.elements.variant.value=state.options.variant;f.elements.clock.value=`${state.options.minutes},${state.options.increment}`;f.elements.human.value=state.options.human;f.elements.difficulty.value=state.options.difficulty;updateSoloSettings();openDialog('setup-dialog');
+  const f=$('setup-form');f.elements.mode.value=online?'solo':state.options.mode;f.elements.variant.value=state.options.variant;f.elements.clock.value=`${state.options.minutes},${state.options.increment}`;f.elements.human.value=state.options.human;f.elements.difficulty.value=state.options.difficulty;updateSoloSettings();openDialog('setup-dialog');
 }
-function updateSoloSettings(){document.querySelectorAll('.solo-setting').forEach(l=>l.style.display=$('setup-form').elements.mode.value==='solo'?'':'none');}
+function updateSoloSettings(){document.querySelectorAll('.solo-setting').forEach(l=>l.style.display=$('setup-form').elements.mode.value==='solo'?'':'none');document.querySelectorAll('.bot-setting').forEach(l=>l.style.display=$('setup-form').elements.mode.value!=='local'?'':'none');}
 $('setup-form').addEventListener('change',updateSoloSettings);
-function startGame(options) {clearTimeout(botTimer);state=newGame(options);events=[];undoStack=[];selected=null;destinations=[];hintMove=null;review=null;started=false;paused=false;annotations=[];rotation=state.options.mode==='solo'?state.options.human:0;focusIndex=index(...rotate(12,7,rotation));$('history').innerHTML='<div class="history-empty"><span class="icon">'+icon('pawn')+'</span><strong>The opening is yours.</strong><p>Make your first move.<br>The rest will follow.</p></div>';lastTick=performance.now();save();render();sound('start');setTab('game');}
+function startGame(options) {if(rooms.session){toast('Leave your online room before starting a local game.');showRoom();return;}clearTimeout(botTimer);state=newGame(options);events=[];undoStack=[];selected=null;destinations=[];hintMove=null;review=null;started=false;paused=false;annotations=[];rotation=state.options.mode==='solo'?state.options.human:0;focusIndex=index(...rotate(12,7,rotation));$('history').innerHTML='<div class="history-empty"><span class="icon">'+icon('pawn')+'</span><strong>The opening is yours.</strong><p>Make your first move.<br>The rest will follow.</p></div>';lastTick=performance.now();save();render();sound('start');setTab('game');}
 $('setup-form').addEventListener('submit',e=>{e.preventDefault();const f=new FormData(e.target),[minutes,increment]=f.get('clock').split(',').map(Number);$('setup-dialog').close();startGame({mode:f.get('mode'),variant:f.get('variant'),human:Number(f.get('human')),difficulty:f.get('difficulty'),minutes,increment});toast('New game ready. Red moves first.');});
 for(const id of ['new-game','top-new','custom-game'])$(id).onclick=setup;
 $('pause').onclick=()=>setPause(!paused);
 $('rotate').onclick=()=>{rotation=(rotation+1)%4;renderBoard();toast('Board rotated.');};
 $('sound').onclick=()=>{prefs.sound=!prefs.sound;save();render();};
-$('undo').onclick=()=>{
+$('undo').onclick=()=>{if(online)return;
   tick();clearTimeout(botTimer);if(!undoStack.length)return;
   let snapshot=undoStack.pop();
   if(state.options.mode==='solo')while(snapshot.state.turn!==state.options.human && undoStack.length)snapshot=undoStack.pop();
@@ -214,7 +228,7 @@ $('undo').onclick=()=>{
   if(!state.history.length)$('history').innerHTML='<div class="history-empty"><strong>The opening is yours.</strong><p>Make your first move.</p></div>';
   save();render();toast('Move taken back.');
 };
-$('hint').onclick=()=>{if(!interactive())return;hintMove=chooseBot(state,'hard');if(hintMove){selected=hintMove.from;destinations=legalMoves(state,selected);renderBoard();toast(`Try ${pieceNames[state.board[hintMove.from].type]} from ${square(hintMove.from)} to ${square(hintMove.to)}.`);}};
+$('hint').onclick=()=>{if(online || !interactive())return;hintMove=chooseBot(state,'hard');if(hintMove){selected=hintMove.from;destinations=legalMoves(state,selected);renderBoard();toast(`Try ${pieceNames[state.board[hintMove.from].type]} from ${square(hintMove.from)} to ${square(hintMove.to)}.`);}};
 let reviewWasPaused=false;
 function setReview(n){if(review===null){tick();reviewWasPaused=paused;paused=true;}review=Math.max(0,Math.min(n,state.history.length));selected=null;destinations=[];hintMove=null;render();}
 function livePosition(){review=null;paused=reviewWasPaused;lastTick=performance.now();render();}
@@ -223,21 +237,21 @@ $('history').onclick=e=>{const b=e.target.closest('[data-review]');if(b)setRevie
 $('nav-history').onclick=()=>{setTab('game');$('history-section').scrollIntoView({behavior:'smooth',block:'center'});};
 $('board-result').onclick=e=>{const action=e.target.closest('[data-action]')?.dataset.action;if(action==='resume')setPause(false);if(action==='new')setup();if(action==='review')setReview(state.history.length);};
 function confirm(title,message,callback,label){$('confirm-title').textContent=title;$('confirm-message').textContent=message;$('confirm-action').textContent=label;$('confirm-action').onclick=()=>{$('confirm-dialog').close();callback();};openDialog('confirm-dialog');}
-$('resign').onclick=()=>{const owner=state.options.mode==='solo'?state.options.human:state.turn;confirm(`Resign ${NAMES[owner]}?`,state.options.variant==='teams'?'Resigning ends the match and the opposing team wins.':'Your pieces become inactive. Your king continues moving automatically until it is eliminated. The last remaining player receives 20 points for each other king still alive.',()=>{tick();events.push({type:'eliminate',owner,reason:'Resigned',time:state.players.map(p=>p.time)});eliminate(state,owner);selected=null;destinations=[];save();render();},'Resign');};
-$('draw').onclick=()=>confirm('Agree to a draw?','In pass & play, all players must agree. Each active army receives 10 points in free-for-all; teams share a draw.',()=>{events.push({type:'draw',reason:'Draw agreed',time:state.players.map(p=>p.time)});draw(state);save();render();},'All players agree');
-$('claim').onclick=()=>{const owner=state.options.mode==='solo'?state.options.human:state.turn;if(claimWin(state,owner)){events.push({type:'claim',owner});save();render();}};
+$('resign').onclick=()=>{const owner=online?online.you:state.options.mode==='solo'?state.options.human:state.turn;confirm(`Resign ${NAMES[owner]}?`,state.options.variant==='teams'?'Resigning ends the match and the opposing team wins.':'Your pieces become inactive. Your king continues moving automatically until it is eliminated. The last remaining player receives 20 points for each other king still alive.',()=>{if(online){sendRoom('resign');return;}tick();events.push({type:'eliminate',owner,reason:'Resigned',time:state.players.map(p=>p.time)});eliminate(state,owner);selected=null;destinations=[];save();render();},'Resign');};
+$('draw').onclick=()=>{if(online){sendRoom('draw').then(result=>{if(result)toast('Draw vote recorded. All active humans must agree.');});return;}confirm('Agree to a draw?','In pass & play, all players must agree. Each active army receives 10 points in free-for-all; teams share a draw.',()=>{events.push({type:'draw',reason:'Draw agreed',time:state.players.map(p=>p.time)});draw(state);save();render();},'All players agree');};
+$('claim').onclick=()=>{if(online){sendRoom('claim');return;}const owner=state.options.mode==='solo'?state.options.human:state.turn;if(claimWin(state,owner)){events.push({type:'claim',owner});save();render();}};
 $('export').onclick=()=>{tick();const blob=new Blob([JSON.stringify({format:'fourway-v1',createdAt:new Date().toISOString(),options:state.options,events,clocks:state.players.map(p=>p.time)},null,2)],{type:'application/json'}),url=URL.createObjectURL(blob),a=document.createElement('a');a.href=url;a.download='fourway-'+new Date().toISOString().slice(0,10)+'.json';a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);toast('Game record exported. Import it to replay or continue.');};
-$('import').onchange=async e=>{const file=e.target.files[0];if(!file)return;try{if(file.size>2e6)throw new Error('Game records must be smaller than 2 MB.');const record=JSON.parse(await file.text()),loaded=loadRecord(record);state=loaded.state;events=loaded.events;undoStack=loaded.stack;started=events.length>0;selected=null;destinations=[];hintMove=null;review=null;rotation=state.options.mode==='solo'?state.options.human:0;$('setup-dialog').close();paused=started&&!state.result;save();render();toast('Game imported. Resume whenever you’re ready.');}catch(err){toast(err.message);}e.target.value='';};
+$('import').onchange=async e=>{if(rooms.session){toast('Leave your room before importing a game.');e.target.value='';return;}const file=e.target.files[0];if(!file)return;try{if(file.size>2e6)throw new Error('Game records must be smaller than 2 MB.');const record=JSON.parse(await file.text()),loaded=loadRecord(record);state=loaded.state;events=loaded.events;undoStack=loaded.stack;started=events.length>0;selected=null;destinations=[];hintMove=null;review=null;rotation=state.options.mode==='solo'?state.options.human:0;$('setup-dialog').close();paused=started&&!state.result;save();render();toast('Game imported. Resume whenever you’re ready.');}catch(err){toast(err.message);}e.target.value='';};
 const rules={
 ffa:`<div class="rule-body"><h3>Play for points.</h3><p>Each army plays for itself. Red starts, then Blue, Yellow, and Green. The highest total score wins when only one active army remains—even an eliminated player can win on points.</p><div class="score-table"><div>Pawn / promoted piece <b>+1</b></div><div>Knight <b>+3</b></div><div>Bishop / Rook <b>+5</b></div><div>Original queen <b>+9</b></div><div>Checkmate <b>+20</b></div><div>Stalemate <b>+10 each</b></div><div>Self-stalemate <b>+20</b></div></div><p>Each other active player earns 10 points when an army is stalemated. If your own move stalemates your king, you receive 20 points instead. Checkmating an army eliminates it immediately; the attacking army earns 20 points. Dead pieces stay on the board as capturable blockers and score zero.</p><h3>A pawn can change everything.</h3><p>On its own eighth rank (the middle of the board), a pawn automatically becomes a queen. That promoted queen still gives only one point when captured.</p><h3>Keep an eye on all three kings.</h3><p>A moved piece that checks two kings earns +5, or +1 if it is a queen. Checking three earns +20, or +5 with a queen. With two active players left, a leader ahead by more than 20 points can claim a win if nobody else already leads.</p><h3>Dead king walking.</h3><p>After resignation or timeout, your pieces become grey blockers, while your king moves randomly on its turns. A remaining player can checkmate it for 20 points, or stalemate it for 10 points each. When only one active player remains, they receive 20 points for each other king still alive and the game ends.</p></div>`,
 teams:`<div class="rule-body"><h3>Across the board. On your side.</h3><p>Red + Yellow form one team. Blue + Green form the other. You can’t capture or check your partner’s pieces. Your partner can block an attack on your king.</p><h3>Protect both kings.</h3><p>Checkmating either opposing king wins the match. Mate is resolved on that player’s turn, giving their partner a chance to help first. A resignation or timeout loses the match for the whole team. A stalemate draws the match.</p><h3>Choose your promotion.</h3><p>Pawns promote on their own eleventh rank. Choose a queen, rook, bishop, or knight. Team games are decided by checkmate, not points.</p><h3>Find a rhythm together.</h3><p>Turns remain Red → Blue → Yellow → Green. In solo mode your teammate is a bot. In pass & play, use the rotate button or enable automatic rotation in Settings.</p></div>`,
-basics:`<div class="rule-body"><h3>Your pieces already know what to do.</h3><p>Kings, queens, rooks, bishops, and knights move as in ordinary chess. Each army’s pawns move toward the opposite edge, one square forward, with an optional two-square first move. Pawns capture one square diagonally forward.</p><h3>A bigger board, the same king safety.</h3><p>The 14 × 14 board has four removed 3 × 3 corners, leaving 160 squares. Pieces can’t move through missing corners, leap over other pieces (except knights), or make moves that leave their king attacked by an active enemy.</p><h3>Special moves included.</h3><p>Castle by moving the king two squares toward an unmoved rook, when the path is clear and the king is not in check and does not cross or land on an attacked square. En passant is available after a pawn’s two-square move until that pawn’s army’s next turn.</p><h3>A game worth keeping.</h3><p>Clocks start with the first move. Only the moving army’s clock runs; increment is added after a move. Pause, undo, hints, replay, and export are available. Games save locally; reloading pauses a saved game. Exported records can be imported from New game.</p><h3>Draws.</h3><p>Threefold repetition, 50 complete turns per active army without a pawn move or capture, and kings-only positions trigger a draw. Active free-for-all armies receive 10 points; the highest score decides the result.</p><h3>A local table.</h3><p>Solo bots and four-person pass & play are supported. There is no remote matchmaking or online room service in this version.</p></div>`
+basics:`<div class="rule-body"><h3>Your pieces already know what to do.</h3><p>Kings, queens, rooks, bishops, and knights move as in ordinary chess. Each army’s pawns move toward the opposite edge, one square forward, with an optional two-square first move. Pawns capture one square diagonally forward.</p><h3>A bigger board, the same king safety.</h3><p>The 14 × 14 board has four removed 3 × 3 corners, leaving 160 squares. Pieces can’t move through missing corners, leap over other pieces (except knights), or make moves that leave their king attacked by an active enemy.</p><h3>Special moves included.</h3><p>Castle by moving the king two squares toward an unmoved rook, when the path is clear and the king is not in check and does not cross or land on an attacked square. En passant is available after a pawn’s two-square move until that pawn’s army’s next turn.</p><h3>A game worth keeping.</h3><p>Clocks start with the first move. Only the moving army’s clock runs; increment is added after a move. Pause, undo, hints, replay, and export are available. Games save locally; reloading pauses a saved game. Exported records can be imported from New game.</p><h3>Draws.</h3><p>Threefold repetition, 50 complete turns per active army without a pawn move or capture, and kings-only positions trigger a draw. Active free-for-all armies receive 10 points; the highest score decides the result.</p><h3>A table with friends.</h3><p>Create a six-character online room and share the code. Two to four human players can join; computers fill empty seats. Opposite colors are partners in Teams. Choose a seat before the host starts. Reconnect in this tab within 90 seconds, or a computer takes over. Online clocks continue while dialogs are open; undo, pause, and hints are local-only features. You can also play against three bots, watch four computers, or pass one device between friends.</p></div>`
 };
 function renderRules(kind){$('rules-content').innerHTML=rules[kind];document.querySelectorAll('[data-rule]').forEach(b=>b.classList.toggle('selected',b.dataset.rule===kind));}
 function showRules(){renderRules(state.options.variant);openDialog('rules-dialog');}
 $('nav-rules').onclick=()=>setTab('guide');$('full-rules').onclick=showRules;$('quick-rules').onclick=showRules;document.querySelectorAll('[data-rule]').forEach(b=>b.onclick=()=>renderRules(b.dataset.rule));
-$('nav-settings').onclick=()=>{for(const key of ['sound','coordinates','hints','auto','animation'])$('pref-'+key).checked=prefs[key];$('pref-theme').value=prefs.theme;$('pref-soundSet').value=prefs.soundSet;openDialog('prefs-dialog');};
-for(const key of ['sound','coordinates','hints','auto','animation'])$('pref-'+key).onchange=e=>{prefs[key]=e.target.checked;save();render();};
+$('nav-settings').onclick=()=>{for(const key of ['sound','coordinates','auto','animation'])$('pref-'+key).checked=prefs[key];$('pref-theme').value=prefs.theme;$('pref-soundSet').value=prefs.soundSet;openDialog('prefs-dialog');};
+for(const key of ['sound','coordinates','auto','animation'])$('pref-'+key).onchange=e=>{prefs[key]=e.target.checked;save();render();};
 $('pref-soundSet').onchange=e=>{prefs.soundSet=e.target.value;save();sound('move');};
 $('board-settings').onclick=()=>$('nav-settings').onclick();
 $('pref-theme').onchange=e=>{prefs.theme=e.target.value;save();render();};
@@ -248,7 +262,7 @@ const tabs=['game','new','guide'];
 for(const tab of tabs){$('tab-'+tab).onclick=()=>setTab(tab);$('tab-'+tab).addEventListener('keydown',e=>{if(!['ArrowLeft','ArrowRight','Home','End'].includes(e.key))return;e.preventDefault();const next=e.key==='Home'?0:e.key==='End'?2:(tabs.indexOf(tab)+(e.key==='ArrowRight'?1:2))%3;setTab(tabs[next]);$('tab-'+tabs[next]).focus();});}
 $('nav-import').onclick=()=>$('import').click();
 $('nav-play').onclick=()=>{setTab('new');document.querySelector('.game-panel').scrollIntoView({behavior:'smooth',block:'start'});};
-for(const [id,opts] of [['quick-solo',{mode:'solo',variant:'ffa'}],['quick-local',{mode:'local',variant:'ffa'}],['quick-teams',{mode:'solo',variant:'teams'}]])$(id).onclick=()=>{startGame({...state.options,...opts});setTab('game');};
+for(const [id,opts] of [['quick-solo',{mode:'solo',variant:'ffa'}],['quick-watch',{mode:'watch',variant:'ffa'}],['quick-local',{mode:'local',variant:'ffa'}],['quick-teams',{mode:'solo',variant:'teams'}]])$(id).onclick=()=>{startGame({...state.options,...opts});setTab('game');};
 $('fullscreen').onclick=()=>{document.body.classList.toggle('focus-mode');$('fullscreen').setAttribute('aria-pressed',String(document.body.classList.contains('focus-mode')));};
 function viewPoint(i){const [r,c]=rotate(...coords(i),(4-rotation)%4);return [c+.5,r+.5];}
 function renderAnnotations(){
@@ -284,5 +298,54 @@ document.addEventListener('keydown',e=>{if(e.key==='Escape'){annotations=[];sele
 document.querySelectorAll('[data-icon]').forEach(el=>el.innerHTML=icon(el.dataset.icon));
 window.addEventListener('pagehide',()=>{tick();save();});
 document.addEventListener('visibilitychange',()=>{tick();if(!document.hidden){render();save();}});
+// Reveal bundled Neo artwork after it loads; local SVG is a fallback for missing assets.
+document.addEventListener('animationend',e=>{if(e.animationName==='slide-piece')e.target.classList?.remove('moving');},true);
+document.addEventListener('load',e=>{if(e.target.classList?.contains('neo-piece')){markPieceLoaded(e.target.dataset.pieceType);e.target.classList.add('neo-ready');}},true);
+document.addEventListener('error',e=>{if(e.target.classList?.contains('neo-piece')){markPieceFailed(e.target.dataset.pieceType);e.target.classList.remove('neo-ready');}},true);
 setInterval(tick,200);setInterval(()=>{if(started&&!state.result)save();},5000);
 render();
+
+
+function escapeHtml(value){return String(value).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));}
+function roomFailure(error){onlineConnected=false;$('room-error').textContent=error.message;if(online)render();if([401,404].includes(error.status)){online=null;rooms.detach();startGame({mode:'solo'});toast(error.message);}}
+function applyRoom(snapshot){
+  const previous=online,changed=!previous||previous.revision!==snapshot.revision,moveAdded=previous&&snapshot.state?.ply>state.ply;
+  online=snapshot;onlineConnected=true;$('room-error').textContent='';
+  if(changed){selected=null;destinations=[];hintMove=null;annotations=[];review=null;}
+  state=snapshot.state||newGame({...snapshot.options,mode:'online'});events=snapshot.events;undoStack=[];started=snapshot.status!=='lobby';
+  rotation=snapshot.you;lastTick=performance.now();
+  if(snapshot.status==='playing' && previous?.status==='lobby'){$('room-dialog').close();paused=false;sound('start');setTab('game');}
+  if(moveAdded){animationMove=state.lastMove;sound(state.result?'end':state.history.at(-1)?.notation.match(/[+#]/)?'check':state.history.at(-1)?.capture?'capture':'move');}
+  if(!document.querySelector('dialog[open]'))paused=false;
+  render();renderRoom();
+}
+function renderRoom(){
+  const active=!!online;$('room-entry').hidden=active;$('room-lobby').hidden=!active;if(!active)return;
+  const humans=online.seats.filter(s=>s&&!s.bot).length,isHost=online.host===online.you;
+  $('room-invite').textContent=online.code;
+  $('room-description').textContent=online.options.variant==='teams'?'Teams: Red + Yellow versus Blue + Green. Choose an open seat to join your partner.':'Free-for-all: each army competes for the highest score.';
+  $('room-seats').innerHTML=online.seats.map((seat,id)=>`<button class="room-seat ${COLORS[id]}" data-room-seat="${id}" ${seat||online.status!=='lobby'?'disabled':''}><strong>${NAMES[id]}${online.options.variant==='teams'?' · Team '+(id%2+1):''}</strong><small>${seat?escapeHtml(seat.name)+(id===online.you?' · You':'')+(id===online.host?' · Host':'')+(seat.bot?'':seat.connected?' · Online':' · Reconnecting'):'Open · computer if unfilled'}</small></button>`).join('');
+  $('room-start').hidden=online.status!=='lobby';$('room-start').disabled=!isHost||humans<2;
+  $('room-start').textContent=humans===4?'Start Game':`Start · ${humans} Players + ${4-humans} Computers`;
+  $('room-start-note').textContent=online.status!=='lobby'?'Seats are locked for this game.':humans<2?'Invite at least one friend to start.':isHost?'You can start now, or wait for more friends.':'Waiting for the host to start.';
+}
+function showRoom(){renderRoom();openDialog('room-dialog');}
+async function sendRoom(action,data={}){
+  if(!onlineConnected && action!=='leave'){toast('Reconnect before playing.');return;}
+  try{return await rooms.call(action,data);}catch(error){$('room-error').textContent=error.message;toast(error.message);if(error.status===409)try{await rooms.call('poll');}catch(e){roomFailure(e);}}
+  finally{renderRoom();}
+}
+$('quick-online').onclick=showRoom;$('room-manage').onclick=showRoom;
+async function enterRoom(action,data){
+  $('room-create').disabled=true;$('room-join').disabled=true;$('room-error').textContent='';
+  try{await rooms.enter(action,{name:$('room-name').value.trim()||'Player',...data});renderRoom();}
+  catch(error){$('room-error').textContent=error.message;}
+  finally{$('room-create').disabled=false;$('room-join').disabled=false;}
+}
+$('create-room-form').addEventListener('submit',e=>{e.preventDefault();const [minutes,increment]=$('room-clock').value.split(',').map(Number);enterRoom('create',{options:{variant:$('room-variant').value,minutes,increment,difficulty:$('room-difficulty').value}});});
+$('join-room-form').addEventListener('submit',e=>{e.preventDefault();enterRoom('join',{code:$('room-code').value.trim().toUpperCase()});});
+$('room-seats').onclick=e=>{const b=e.target.closest('[data-room-seat]');if(b&&!b.disabled)sendRoom('seat',{seat:Number(b.dataset.roomSeat)});};
+$('room-start').onclick=()=>sendRoom('start');
+$('room-copy').onclick=async()=>{try{await navigator.clipboard.writeText(online.code);toast('Room code copied.');}catch{toast('Share this room code: '+online.code);}};
+$('room-leave').onclick=async()=>{try{await rooms.leave();online=null;onlineConnected=false;$('room-dialog').close();startGame({mode:'solo'});toast('You left the room. A computer takes your seat in an active game.');}catch(error){$('room-error').textContent=error.message;}};
+rooms.restore();

@@ -20,5 +20,11 @@
         }
       ]
     }
-  ]
+  ],
+  "functions": {
+    "api/rooms.js": {
+      "includeFiles": "{server/**,public/engine.js}",
+      "maxDuration": 30
+    }
+  }
 }

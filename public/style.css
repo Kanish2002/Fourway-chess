@@ -184,7 +184,7 @@ main {
 }
 .game-layout {
   display:grid;
-  grid-template-columns:minmax(0,min(900px,calc(100dvh - 105px))) minmax(300px,350px);
+  grid-template-columns:minmax(0,min(900px,max(520px,calc(100dvh - 165px)))) minmax(300px,350px);
   gap:24px;
   justify-content:center;
   align-items:start;
@@ -297,14 +297,19 @@ h1 {
   width:25%;
   height:25%;
   border-radius:50%;
-  background:#00000026;
+  background:#18231380;
   position:absolute;
+  left:50%;
+  top:50%;
+  transform:translate(-50%,-50%);
+  z-index:3;
+  box-shadow:0 0 0 1px #ffffff35;
   pointer-events:none;
 }
 .cell.legal.capture::after {
   width:97%;
   height:97%;
-  border:5px solid #00000026;
+  border:clamp(3px,.4vw,5px) solid #18231399;
   background:none;
 }
 .piece {
@@ -1514,7 +1519,7 @@ body.focus-mode .app-shell {
   margin-left:0;
 }
 body.focus-mode .game-layout {
-  grid-template-columns:minmax(0,min(1100px,calc(100dvh - 102px)));
+  grid-template-columns:minmax(0,min(1100px,max(520px,calc(100dvh - 165px))));
   justify-content:center;
 }
 @keyframes slide-piece {
@@ -2183,4 +2188,112 @@ body.focus-mode .game-layout {
     animation:none!important;
     scroll-behavior:auto!important;
   }
+}
+
+
+/* One continuous outline follows all twelve edges of the cross. Keeping it in
+   an overlay preserves the board's exact grid and pointer-coordinate mapping. */
+.board-border { position:absolute; inset:0; width:100%; height:100%; overflow:visible; pointer-events:none; z-index:6; }
+
+.piece { position:relative; }
+.neo-piece { display:none; position:absolute; inset:0; width:100%; height:100%; object-fit:contain; }
+.neo-piece.neo-ready { display:block; }
+.piece:has(.neo-ready) > svg { visibility:hidden; }
+/* Preserve dark outlines while coloring the light Neo artwork. */
+.piece.red .neo-piece { filter:url(#neo-red); }
+.piece.blue .neo-piece { filter:url(#neo-blue); }
+.piece.yellow .neo-piece { filter:url(#neo-yellow); }
+.piece.green .neo-piece { filter:url(#neo-green); }
+.piece.dead .neo-piece { filter:grayscale(1) brightness(.85); }
+.room-banner { display:flex; align-items:center; justify-content:space-between; gap:10px; padding:10px 14px; background:#262421; font-size:12px; }
+.room-banner[hidden], #room-lobby[hidden], #room-entry[hidden] { display:none; }
+#room-dialog { width:min(560px,calc(100vw - 24px)); }
+.room-label { display:block; margin:12px 0 8px; font-size:13px; color:var(--muted); }
+.room-label input, .join-room-form input { display:block; width:100%; margin-top:8px; border:1px solid #55514b; border-radius:5px; background:#211f1c; color:#fff; padding:12px; font:inherit; }
+.join-room-form { display:flex; align-items:end; gap:12px; margin-bottom:12px; }
+.join-room-form label { flex:1; min-width:0; }
+#room-code { text-transform:uppercase; letter-spacing:3px; font-weight:700; }
+.room-divider { margin:22px 0; text-align:center; font-size:12px; color:var(--muted); }
+.invite-code { display:flex; align-items:center; justify-content:space-between; gap:12px; background:#24221f; border:1px dashed #81b64c; border-radius:8px; padding:14px; }
+.invite-code strong { font-size:28px; letter-spacing:6px; color:#fff; }
+.room-seats { display:grid; grid-template-columns:1fr 1fr; gap:10px; margin:16px 0; }
+.room-seat { border:1px solid #5e5b54; border-left:4px solid var(--player); border-radius:6px; background:#302d28; padding:12px; text-align:left; min-width:0; }
+.room-seat strong, .room-seat small { display:block; overflow-wrap:anywhere; }
+.room-seat small { color:var(--muted); margin-top:5px; font-size:12px; }
+.room-seat:disabled { opacity:.9; cursor:default; }
+.room-error { color:#ff9a88; min-height:20px; font-size:13px; }
+.room-reconnect-note { color:var(--muted); font-size:12px; line-height:1.6; }
+#room-start, #room-leave { width:100%; margin-top:10px; }
+@media (max-width:480px) { .invite-code strong { font-size:23px; letter-spacing:4px; } .join-room-form { gap:8px; } }
+
+.piece-filters { position:absolute; pointer-events:none; }
+
+/* Compact clocks stay in the original corner cutouts. Leave the last
+   3 SVG units clear for the wooden frame outside the playable squares. */
+.arena { --frame-gap:clamp(12px,2.15vw,22px); }
+.arena .board-wrap { margin:26px var(--frame-gap); }
+.game-panel .players { gap:12px; }
+.game-panel .player-card { gap:12px; padding:13px 14px; min-height:76px; border-radius:7px; }
+.game-panel .player-name { font-size:13px; flex-wrap:wrap; }
+.game-panel .player-subtitle { font-size:11px; margin-top:5px; }
+.game-panel .player-numbers { flex-shrink:0; margin-left:4px; }
+.game-panel .clock { font-size:24px; line-height:1.25; }
+.game-panel .score { font-size:10px; margin-top:6px; }
+@media (max-width:1050px) {
+  .game-layout { grid-template-columns:minmax(0,1fr) 290px; }
+}
+@media (max-width:900px) {
+  .game-layout { display:flex; flex-direction:column; gap:24px; }
+  .arena { width:100%; max-width:760px; margin:auto; }
+  .game-panel { width:100%; max-width:760px; margin:0 auto; }
+  .game-panel .players { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); }
+  body.focus-mode .arena { max-width:760px; }
+}
+@media (max-width:600px) {
+  .arena .board-wrap { margin:22px var(--frame-gap); }
+  .game-panel .player-card { flex-wrap:wrap; gap:10px; padding:12px; }
+  .game-panel .player-details { flex-basis:100%; }
+  .game-panel .player-avatar { display:none; }
+  .game-panel .player-numbers { text-align:left; margin-left:0; }
+}
+
+.board-wrap .corner { width:19.2857%; height:19.2857%; padding:7px; overflow:hidden; }
+.board-wrap .corner-player { min-width:0; max-width:130px; width:100%; padding:2px; gap:5px; }
+.board-wrap .corner-heading { gap:6px; }
+.board-wrap .corner-heading>div { min-width:0; }
+.board-wrap .corner-heading strong { font-size:12px; color:var(--player); line-height:1.3; white-space:nowrap; }
+.board-wrap .corner-heading small { font-size:10px; line-height:1.3; margin-top:2px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.board-wrap .corner-avatar { display:flex; width:24px; height:24px; border-radius:4px; }
+.board-wrap .corner-clock { min-width:0; font-size:23px; line-height:1.15; padding:4px 7px; gap:5px; border-radius:4px; }
+.board-wrap .corner-clock .icon { width:13px; height:13px; }
+.board-wrap .corner-points { font-size:10px; line-height:1.3; }
+@media (max-width:1250px) and (min-width:901px) {
+  .board-wrap .corner { padding:4px; }
+  .board-wrap .corner-player { gap:4px; }
+  .board-wrap .corner-heading strong { font-size:10px; }
+  .board-wrap .corner-heading small { font-size:8px; }
+  .board-wrap .corner-avatar { display:none; }
+  .board-wrap .corner-clock { font-size:18px; padding:3px 5px; }
+  .board-wrap .corner-clock .icon { display:none; }
+  .board-wrap .corner-points { font-size:9px; }
+}
+@media (max-width:600px) {
+  .board-wrap .corner { padding:3px; }
+  .board-wrap .corner-player { gap:3px; padding:1px; }
+  .board-wrap .corner-heading strong { font-size:10px; }
+  .board-wrap .corner-heading small { font-size:8px; margin-top:1px; }
+  .board-wrap .corner-avatar { display:none; }
+  .board-wrap .corner-clock { font-size:19px; padding:3px 5px; }
+  .board-wrap .corner-clock .icon { display:none; }
+  .board-wrap .corner-points { font-size:9px; }
+}
+@media (max-width:480px) {
+  .board-wrap .corner { padding:2px; }
+  .board-wrap .corner-player { gap:2px; }
+  .board-wrap .corner-clock { font-size:17px; padding:3px 4px; }
+  .board-wrap .corner-points { display:none; }
+}
+@media (max-width:360px) {
+  .board-wrap .corner-heading strong { font-size:9px; }
+  .board-wrap .corner-clock { font-size:15px; }
 }
